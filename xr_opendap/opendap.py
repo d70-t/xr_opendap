@@ -67,9 +67,8 @@ def renderDASAttribute(name, content):
     if len(shape) == 0:
         return (u"{:s} {:s} " + fmt).format(daptype, name, content)
     else:
-        return u"{:s} {:s}".format(daptype, name) + u"{" +\
-               u", ".join(fmt.format(c) for c in content) + \
-               u"}"
+        return u"{:s} {:s} ".format(daptype, name) + \
+               u", ".join(fmt.format(c) for c in content)
 
 def dsiter(ds):
     for name, coord in ds.coords.items():

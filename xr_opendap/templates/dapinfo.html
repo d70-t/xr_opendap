@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>dataset &quot;{{ name }}&quot;</title>
+    </head>
+    <body>
+        <h1>OPeNDAP info for &quot;{{ name }}&quot;</h1>
+        You have reached an <a href="https://www.opendap.org/">OPeNDAP</a> url.
+        Usually, you would not open such an URL by it self, but rather let some client library (e.g. netCDF since version 4.1 or pydap) handle it for you.
+        <h2>usage</h2>
+        Here are some examples, how this dataset might be used.
+        Basically, you can enter the URL of this page ( {{ full_url }} ) into any OPeNDAP compatible software.
+        <h3>ncdump</h3>
+        <pre>
+ncdump -h {{ full_url }}
+        </pre>
+        <h3>ncview</h3>
+        ncview is sometimes not very clever in scheduling OPeNDAP requests. If loadings seems to hang forever, this might be the reason and you should try another method.
+        Anyways, this is how it would look like:
+        <pre>
+ncview {{ full_url }}
+        </pre>
+        <h3>python with xarray</h3>
+        xarray is a very good candidate to work with remote datasets. Especially the "open_mfdataset" function allows to open multiple datasets and slicing can be used to reduce the ammount of transferred data elegantly.
+        <pre>
+import xarray as xr
+ds = xr.open_dataset("{{ full_url }}")
+        </pre>
+        <h2>contents</h2>
+        <h3>attributes</h3>
+        <dl>
+        {% for aname, attr in data.attrs.items() %}
+        <dt>{{ aname }}</dt>
+        <dd>{{ attr }}</dd>
+        {% end for %}
+        </dl>
+        <h3>dimensions</h3>
+        <ul>
+        {% for dim, size in data.sizes.items() %}
+        <li>{{ dim }}: {{ size }}</li>
+        {% end for %}
+        </ul>
+        <h3>variables</h3>
+        <ul>
+        {% for varname, variable in data.variables.items() %}
+        <li>
+            {{ varname }} ({{ ",".join(variable.dims)}})
+            <ul>
+            {% for aname, attr in variable.attrs.items() %}
+            <li><b>{{ aname }}:</b> {{ attr }}</li>
+            {% end for %}
+            </ul>
+        </li>
+        {% end for %}
+        </ul>
+    </body>
+</html>

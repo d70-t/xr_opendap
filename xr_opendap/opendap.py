@@ -241,3 +241,16 @@ class DataDDSHandler(OpenDAPHandler):
                 self.write(part)
                 yield self.flush()
         self.finish()
+
+class InfoHandler(OpenDAPHandler):
+    def initialize(self, *args, **kwargs):
+        super(InfoHandler, self).initialize(*args, **kwargs)
+        self.set_header('Content-Type', 'text/html')
+
+    def get(self, objectId):
+        name = objectId.split("/")[-1]
+        try:
+            data = self.locate(objectId)
+        except IOError:
+            return self.not_found()
+        self.render("dapinfo.html", name=name, data=data)

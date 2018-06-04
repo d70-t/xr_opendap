@@ -52,8 +52,11 @@ class RequestHandler(tornado.web.RequestHandler):
         kwargs['prefix'] = self.serverPrefix
         kwargs['protocol'] = self.protocol
         kwargs['host'] = self.host
-        kwargs['urlprefix'] = self.urlprefix
         kwargs['dap_requires_key'] = self.dap_requires_key
+        kwargs['full_url'] = self.protocol + "://" + self.host + self.serverPrefix + self.request.uri
         return super(RequestHandler, self).render(*args, **kwargs)
+    def not_found(self):
+        self.set_status(404)
+        self.write("404 not found")
     def deny(self):
         self.set_status(403)

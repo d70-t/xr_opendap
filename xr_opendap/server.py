@@ -11,7 +11,7 @@ import tornado.web
 import tornado.ioloop
 import yaml
 
-from xr_opendap.opendap import DASHandler, DDSHandler, DataDDSHandler
+from xr_opendap.opendap import DASHandler, DDSHandler, DataDDSHandler, InfoHandler
 from xr_opendap.datalocator import parse_location_config
 
 class EmptyHandler(tornado.web.RequestHandler):
@@ -25,6 +25,7 @@ class Application(tornado.web.Application):
             (r"/(?P<objectId>.+)\.das$", DASHandler),
             (r"/(?P<objectId>.+)\.dds$", DDSHandler),
             (r"/(?P<objectId>.+)\.dods$", DataDDSHandler),
+            (r"/(?P<objectId>.+)$", InfoHandler),
             ]
         settings = dict(
             template_path=os.path.join(os.path.dirname(__file__), "templates"),

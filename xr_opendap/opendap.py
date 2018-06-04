@@ -63,12 +63,11 @@ def renderDASAttribute(name, content):
     assert(len(shape) <= 2)
     daptype = openDapTypes[str(content.dtype)]
     dapformat = openDapFormat[daptype]
+    fmt = u"{:" + dapformat + u"}"
     if len(shape) == 0:
-        return u"{:s} {:" + dapformat + u"}".format(daptype, content)
+        return (u"{:s} {:s} " + fmt).format(daptype, name, content)
     else:
-        return None
-        fmt = u"{:" + dapformat + u"}"
-        return u"{:s} ".format(daptype) + u"{" +\
+        return u"{:s} {:s}".format(daptype, name) + u"{" +\
                u", ".join(fmt.format(c) for c in content) + \
                u"}"
 
@@ -206,6 +205,7 @@ class DDSHandler(OpenDAPHandler):
     def get(self,objectId):
         if self.chk_etag():
             return
+        name = objectId.split("/")[-1]
         data = self.locate(objectId)
         projItems = filter(lambda x: x is not None, map(Projection.parse, self.request.query.split(',')))
         data = self.locate(objectId)
@@ -213,7 +213,7 @@ class DDSHandler(OpenDAPHandler):
             values = [(p.id, data[p.id][p.numpySlice]) for p in projItems]
         else:
             values = list(data.items())
-        self.write(u"".join(xr2dds(values)))
+        self.write(u"".join(xr2dds(values, name)))
 
 class DataDDSHandler(OpenDAPHandler):
     def initialize(self, *args, **kwargs):
@@ -227,13 +227,14 @@ class DataDDSHandler(OpenDAPHandler):
         if self.chk_etag():
             return
         projItems = filter(lambda x: x is not None, map(Projection.parse, self.request.query.split(',')))
+        name = objectId.split("/")[-1]
         data = self.locate(objectId)
         print list(projItems)
         if len(projItems) > 0:
             values = [(p.id, data[p.id][p.numpySlice]) for p in projItems]
         else:
             values = list(data.items())
-        self.write(u"".join(xr2dds(values)))
+        self.write(u"".join(xr2dds(values, name)))
         self.write("\nData:\n")
         for cname, component in values:
             for part in xrda2xdr(component):

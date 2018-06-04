@@ -1,0 +1,7 @@
+sources:
+    type: router
+    routes:
+        - pattern: ^narval-ii/cloudmask/(.+)$
+          locator:
+            type: file
+            folder: /project/meteo/data/narval-ii/cloudmask_swir_felix/

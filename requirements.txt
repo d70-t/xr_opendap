@@ -2,3 +2,4 @@ numpy
 xarray
 tornado
 netcdf4
+pyyaml

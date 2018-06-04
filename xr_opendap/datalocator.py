@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import xarray as xr
 
 # path comparisons from https://stackoverflow.com/questions/3812849/how-to-check-whether-a-directory-is-a-sub-directory-of-another-directory#18115684
@@ -79,3 +80,30 @@ class FileLocator(object):
         if not is_subdirectory(path, self._folder):
             raise ValueError("invalid key")
         return xr.open_dataset(path, decode_cf=decode_cf)
+
+class LocationRouter(object):
+    def __init__(self, routes):
+        self._routes = routes
+    def locate(self, key, decode_cf=False):
+        for route in self._routes:
+            m = route["pattern"].match(key)
+            if m is not None:
+                return route["locator"].locate(m.group(1), decode_cf)
+        raise ValueError("no matching route")
+
+def parse_file_locator_config(config):
+    return FileLocator(config["folder"])
+
+def parse_location_router_config(config):
+    routes = [{"pattern": re.compile(r["pattern"]),
+               "locator": parse_location_config(r["locator"])}
+              for r in config["routes"]]
+    return LocationRouter(routes)
+
+CONFIG_PARSRES = {
+    "file": parse_file_locator_config,
+    "router": parse_location_router_config,
+}
+
+def parse_location_config(config):
+    return CONFIG_PARSRES[config["type"]](config)

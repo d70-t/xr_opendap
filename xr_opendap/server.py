@@ -17,9 +17,9 @@ from xr_opendap.datalocator import parse_location_config
 class Application(tornado.web.Application):
     def __init__(self, config):
         handlers = [
-            (r"/dap/(?P<objectId>.+)\.das$", DASHandler),
-            (r"/dap/(?P<objectId>.+)\.dds$", DDSHandler),
-            (r"/dap/(?P<objectId>.+)\.dods$", DataDDSHandler),
+            (r"/(?P<objectId>.+)\.das$", DASHandler),
+            (r"/(?P<objectId>.+)\.dds$", DDSHandler),
+            (r"/(?P<objectId>.+)\.dods$", DataDDSHandler),
             ]
         settings = dict(
             template_path=os.path.join(os.path.dirname(__file__), "templates"),

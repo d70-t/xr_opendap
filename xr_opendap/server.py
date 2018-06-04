@@ -14,9 +14,14 @@ import yaml
 from xr_opendap.opendap import DASHandler, DDSHandler, DataDDSHandler
 from xr_opendap.datalocator import parse_location_config
 
+class EmptyHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.write("ok")
+
 class Application(tornado.web.Application):
     def __init__(self, config):
         handlers = [
+            (r"/$", EmptyHandler),
             (r"/(?P<objectId>.+)\.das$", DASHandler),
             (r"/(?P<objectId>.+)\.dds$", DDSHandler),
             (r"/(?P<objectId>.+)\.dods$", DataDDSHandler),

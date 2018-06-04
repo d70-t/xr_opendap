@@ -1,30 +1,32 @@
 # -*- coding: utf-8 -*-
 
-if __name__ == '__main__':
-    import matplotlib as mpl
-    mpl.use('Agg')
+#if __name__ == '__main__':
+#    import matplotlib as mpl
+#    mpl.use('Agg')
 
 import os
+import datetime
 import subprocess
 import tornado.web
 import tornado.ioloop
-#from raven.contrib.tornado import AsyncSentryClient
-#from raven.contrib.tornado import SentryMixin
-#from raven.handlers.logging import SentryHandler
 
-from .opendap import DASHandler, DDSHandler, DataDDSHandler
+from xr_opendap.opendap import DASHandler, DDSHandler, DataDDSHandler
+from xr_opendap.datalocator import FileLocator
 
 class Application(tornado.web.Application):
     def __init__(self):
         handlers = [
-            (r"/dap/(?P<objectId>[0-9a-f]+)\.das", DASHandler),
-            (r"/dap/(?P<objectId>[0-9a-f]+)\.dds", DDSHandler),
-            (r"/dap/(?P<objectId>[0-9a-f]+)\.dods", DataDDSHandler),
+            (r"/dap/(?P<objectId>.+)\.das$", DASHandler),
+            (r"/dap/(?P<objectId>.+)\.dds$", DDSHandler),
+            (r"/dap/(?P<objectId>.+)\.dods$", DataDDSHandler),
             ]
+        locator = FileLocator("/project/meteo/data/narval-ii/cloudmask_swir_felix/")
         settings = dict(
             template_path=os.path.join(os.path.dirname(__file__), "templates"),
             static_path=os.path.join(os.path.dirname(__file__), "static"),
             debug=True,
+            opendapPageExpiryTime=datetime.timedelta(seconds=5),
+            data_locator=locator,
             )
         tornado.web.Application.__init__(self, handlers, **settings)
 

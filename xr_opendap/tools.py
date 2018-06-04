@@ -37,9 +37,8 @@ class RequestHandler(tornado.web.RequestHandler):
             query = [x for x in query if not x.startswith('key=')]
             uriparts[4] = '&'.join(query)
             uri = urlparse.urlunparse(uriparts)
-            roles = '&'.join(sorted(self.current_roles))
             gitrev = self.settings['git-rev']
-            return hashlib.sha256('!'.join((uri, roles, gitrev))).hexdigest()
+            return hashlib.sha256('!'.join((uri, gitrev))).hexdigest()
     def chk_etag(self):
         self.set_etag_header()
         if self.check_etag_header():

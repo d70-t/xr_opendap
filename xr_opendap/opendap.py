@@ -11,232 +11,77 @@ from .tools import RequestHandler
 from tornado import gen
 import tornado.web
 import numpy as np
+import xarray as xr
 import xdrlib
 import itertools
 import re
+import datetime
+import urllib
 
 indentFill = '    '
 
 openDapTypes = {'uint8':   'Byte',
+                'int8':    'Byte',
                 'int16':   'Int16',
                 'uint16':  'UInt16',
                 'int32':   'Int32',
                 'uint32':  'UInt32',
                 'float32': 'Float32',
-                'float64': 'Float64'}
+                'float64': 'Float64',
+                'datetime64[ns]': 'Float64',
+                'int64': 'Float64',
+               }
+
+openDapFormat = {'Byte':   'd',
+                 'Int16':   'd',
+                 'UInt16':  'd',
+                 'Int32':   'd',
+                 'UInt32':  'd',
+                 'Float32': 'g',
+                 'Float64': 'g',
+                 }
+
+openDapNumpyCodes = {'Byte':   '>u1',
+                     'Int16':   '>i2',
+                     'UInt16':  '>u2',
+                     'Int32':   '>i4',
+                     'UInt32':  '>u4',
+                     'Float32': '>f4',
+                     'Float64': '>f8',
+                    }
 
 def dtype2dapTypecode(data):
-    size = data.dtype.itemsize
-    if size > 1 and size < 4:
-        size = 4
-    return '>%s%d'%(data.dtype.kind, size)
+    daptype = openDapTypes[str(data.dtype)]
+    return openDapNumpyCodes[daptype]
 
 def renderDASAttribute(name, content):
-    if isinstance(content, unicode):
-        content = content.encode('utf-8')
-    return "string %s \"%s\""%(name, str(content).replace('\\', '\\\\').replace('"','\\"'))
-
-class DAPDataType(object):
-    def _repr_das_(self):
-        return ''.join(self._repr_das_iter_())
-    def _repr_dds_(self):
-        return ''.join(self._repr_dds_iter_())
-
-class Array(DAPDataType):
-    def __init__(self, name, dimensions, dtype, data=None, projections=None, description=None):
-        self.name = name
-        self.dimensionNames, self.dimensionSize = zip(*dimensions)
-        self.dtype = dtype
-        self.data = data
-        self.description = description
-        if projections is None:
-            self.size = self.dimensionSize
-            self.projection = None
-        else:
-            if len(projections) != 1:
-                raise ValueError('can only handle one projection')
-            self.projection = projections[0]
-            try:
-                self.size = self.projection.size + self.dimensionSize[len(self.projection.size):]
-            except AttributeError:
-                self.size = self.dimensionSize
-    def _repr_das_iter_(self, indent=0):
-        yield "%s%s {\r\n"%(indentFill*indent, self.name)
-        for name, content in self.description.items():
-            if name[0] == '_':
-                continue
-            yield "%s%s;\r\n"%(indentFill*(indent+1), renderDASAttribute(name, content))
-        yield "%s}\r\n"%(indentFill*indent)
-    def _repr_dds_iter_(self, indent=0):
-        dims = ''.join('[%s=%d]'%(name,size) for name,size in zip(self.dimensionNames, self.size))
-        yield "%s%s %s%s;\r\n"%(indentFill*indent, openDapTypes[str(self.dtype)], self.name, dims)
-    def generateData(self, data=None):
-        if data is None:
-            if self.data is None:
-                raise ValueError('no data given')
-            data = self.data
-        shape = self.size
-        print shape
-        size = np.prod(shape)
-        p = xdrlib.Packer()
-        p.pack_int(size)
-        p.pack_int(size)
-        yield p.get_buffer()
-        if len(shape) == 1:
-            print self.projection
-            if self.projection is not None:
-                if isinstance(self.data,np.ndarray):
-                    data = self.data[self.projection.numpySlice]
-                else:
-                    data = self.data.get()[self.projection.numpySlice]
-            else:
-                if isinstance(self.data,np.ndarray):
-                    data = self.data
-                else:
-                    data = self.data.get()
-            yield data.ravel().astype(dtype2dapTypecode(data)).tostring()
-        elif any([x == 1 for x in shape]):
-            for axis, size in enumerate(shape): # pragma: no branch
-                if size == 1:
-                    print "found unity sized axis, transposing!"
-                    pos = self.projection.numpySlice[axis].start
-                    data = iter(data.T(axis).S(pos, pos+1)).next()[np.newaxis,...]
-                    data = np.rollaxis(data, 0, axis+1)
-                    newSlice = self.projection.numpySlice[:axis] + (slice(0,1),) + self.projection.numpySlice[axis+1:]
-                    yield data[newSlice].ravel().astype(dtype2dapTypecode(data)).tostring()
-                    break
-        else:
-            if self.projection is not None and len(self.projection.numpySlice) > 0:
-                iterSlice = self.projection.numpySlice[0]
-                partSlice = self.projection.numpySlice[1:]
-                i = 0
-                step = iterSlice.step
-                if step is None:
-                    step = 1
-                for subarray in data.S(iterSlice.start, iterSlice.stop):
-                    i += 1
-                    if i >= step:
-                        i = 0
-                    else:
-                        continue
-                    yield subarray[partSlice].ravel().astype(dtype2dapTypecode(data)).tostring()
-            else:
-                for subarray in data:
-                    yield subarray.ravel().astype(dtype2dapTypecode(data)).tostring()
-
-class Sequence(DAPDataType):
-    def __init__(self, name, components, data=None):
-        self.name = name
-        self.components = components
-        self.data = None
-    def _repr_das_iter_(self, indent=0):
-        yield "%s%s {\r\n"%(indentFill*indent, self.name)
-        for component in self.components:
-            for line in component._repr_das_iter_(indent+1):
-                yield line
-        yield "%s}\r\n"%(indentFill*indent)
-    def _repr_dds_iter_(self, indent=0):
-        yield "%ssequence {\r\n"%(indentFill*indent,)
-        for component in self.components:
-            for line in component._repr_dds_iter_(indent+1):
-                yield line
-        yield "%s} %s;\r\n"%(indentFill*indent, self.name)
-        
-
-class Structure(Sequence):
-    def _repr_dds_iter_(self, indent=0):
-        yield "%sstructure {\r\n"%(indentFill*indent,)
-        for component in self.components:
-            for line in component._repr_dds_iter_(indent+1):
-                yield line
-        yield "%s} %s;\r\n"%(indentFill*indent, self.name)
-    def generateData(self, data=None):
-        if data is None:
-            data = self.data
-        if data is None:
-            for c in self.components:
-                for d in c.generateData():
-                    yield d
-        else:
-            for c,d in itertools.izip(self.components, data):
-                for d2 in c.generateData(d):
-                    yield d2
-
-class Dataset(Structure):
-    def __init__(self, components, id, source='', history='', references='', date=None):
-        super(Dataset,self).__init__('attributes', components)
-        self.id = id
-        self.attributes = {
-            'Conventions': 'CF-1.6',
-            'version': 'pre-Alpha',
-            'sensor': 'specMACS',
-            'title': 'Munich Aerosol Cloud Scanner data',
-            'institution': 'Meterorological Institute Munich',
-            'source': source,
-            'history': history,
-            'references': references}
-        if date is not None:
-            self.attributes['date'] = date2seconds(date)
-            self.attributes['isodate'] = date.isoformat()
-    def _repr_das_iter_(self, indent=0):
-        yield "%sattributes {\r\n"%(indentFill*indent,)
-        for name, content in self.attributes.items():
-            if name[0] == '_':
-                continue
-            yield "%s%s;\r\n"%(indentFill*(indent+1), renderDASAttribute(name, content))
-        for component in self.components:
-            for line in component._repr_das_iter_(indent+1):
-                yield line
-        yield "%s}\r\n"%(indentFill*indent,)
-    def _repr_dds_iter_(self, indent=0):
-        yield "%sdataset {\r\n"%(indentFill*indent,)
-        for component in self.components:
-            for line in component._repr_dds_iter_(indent+1):
-                yield line
-        yield "%s} %s;\r\n"%(indentFill*indent, self.id)
-
-def product2Dataset(product, projections=None, references=""):
-    components = []
-    if projections is not None and len(projections) == 0:
-        projections = None
-    for name, dimension in product.productDimensions.items():
-        if name in HIDDEN_PARTS:
-            continue
-        if projections is not None:
-            applicableProjections = []
-            for p in projections:
-                if name in p.requestedParts:
-                    applicableProjections.append(p)
-            if len(applicableProjections) == 0:
-                continue
-        else:
-            applicableProjections = None
-        part = product[name]
-        description = product.partDescription[name]
-        if '_transform' in description:
-            data = description['_transform'](part.get())
-        else:
-            data = part
-        if str(data.dtype) not in openDapTypes:
-            continue
-        components.append(Array(name, zip(dimension, data.shape), data.dtype, data, applicableProjections, description=description))
-        #components.append(Array(name, zip(dimension, data.shape), 'float32', data, applicableProjections))
     try:
-        source='Hyperspectral Imager %s'%product.sensorId
+        shape = content.shape
     except AttributeError:
-        source='specMACS measurement system'
-    return Dataset(components,
-                   product.hash,
-                   source=source,
-                   history='\r\n'.join(product.getPrintableComponentHistory()),
-                   references=references,
-                   date=getattr(product, 'date', None))
+        return u"string %s \"%s\""%(name, content.replace('\\', '\\\\').replace('"','\\"'))
+
+    assert(len(shape) <= 2)
+    daptype = openDapTypes[str(content.dtype)]
+    dapformat = openDapFormat[daptype]
+    if len(shape) == 0:
+        return u"{:s} {:" + dapformat + u"}".format(daptype, content)
+    else:
+        return None
+        fmt = u"{:" + dapformat + u"}"
+        return u"{:s} ".format(daptype) + u"{" +\
+               u", ".join(fmt.format(c) for c in content) + \
+               u"}"
+
+def dsiter(ds):
+    for name, coord in ds.coords.items():
+        yield name, coord
 
 class Projection(object):
     idProjectionRe = re.compile(r"(?P<id>[a-zA-Z_%\.][a-zA-Z0-9/_%\.]*)")
     arrayProjectionRe = re.compile(r"(?P<id>[a-zA-Z_%\.][a-zA-Z0-9/_%\.]*)(?P<dim>(?:\[[0-9]+(?::[0-9]+){0,2}\])+)")
     @classmethod
     def parse(cls,projectionString):
+        projectionString = urllib.unquote(projectionString)
         m = cls.arrayProjectionRe.match(projectionString)
         if m is not None:
             return ArrayProjection(**m.groupdict())
@@ -251,6 +96,8 @@ class IdProjection(Projection):
     @property
     def numpySlice(self):
         return tuple()
+    def __repr__(self):
+        return "IdProjection({})".format(self.id)
 
 class ArrayProjection(Projection):
     def __init__(self, id, dim):
@@ -274,39 +121,99 @@ class ArrayProjection(Projection):
     def __repr__(self):
         return "ArrayProjection(%s,%s)"%(self.id, ''.join(["[%d:%d:%d]"%h for h in self.hyperslabs]))
 
+def xr2das(ds, indent=0, name="attributes"):
+    yield u"%s%s {\r\n"%(indentFill*indent,name)
+    for name, content in ds.attrs.items():
+        attr = renderDASAttribute(name, content)
+        if attr is not None:
+            yield u"%s%s;\r\n"%(indentFill*(indent+1), attr)
+    try:
+        items = ds.items()
+    except AttributeError:
+        pass
+    else:
+        for name, component in items:
+            for line in xr2das(component, indent+1, name):
+                yield line
+    yield u"%s}\r\n"%(indentFill*indent,)
+
+def xr2dds(ds, name="dataset", indent=0):
+    if isinstance(ds, xr.Dataset):
+        kind = "dataset"
+    elif isinstance(ds, list):
+        kind = "dataset"
+    elif isinstance(ds, xr.DataArray):
+        kind = "array"
+    if kind == "array":
+        daptype = openDapTypes[str(ds.dtype)]
+        yield u"%s%s %s"%(indentFill*indent, daptype, name) + \
+              u"".join(u"[{}={}]".format(k, v) for k, v in ds.sizes.items()) + \
+              u";\r\n"
+        return
+    yield "%s%s {\r\n"%(indentFill*indent, kind)
+    for cname, component in ds:
+        for line in xr2dds(component, cname, indent+1):
+            yield line
+    yield "%s} %s;\r\n"%(indentFill*indent, name)
+
+def xrda2xdr(da):
+    size = np.prod(da.shape)
+    typecode = dtype2dapTypecode(da)
+    print "converting {} -> {}".format(da.dtype, typecode)
+    print da.shape
+    p = xdrlib.Packer()
+    p.pack_int(size)
+    p.pack_int(size)
+    yield p.get_buffer()
+    if len(da.shape) > 1 and np.prod(da.shape[1:]) > 1024:
+        for subarray in da:
+            yield subarray.load().data.ravel().astype(typecode).tostring()
+    else:
+        yield da.load().data.ravel().astype(typecode).tostring()
+
+
+
 class OpenDAPHandler(RequestHandler):
     def initialize(self, *args, **kwargs):
         super(OpenDAPHandler, self).initialize(*args, **kwargs)
         self.set_header('XDODS-Server', 'dods/3.2.2')
-        self.set_header('Expires', datetime.datetime.now() + opendapPageExpiryTime)
-        self.set_header('Cache-Control', 'max-age=%d'%int(opendapPageExpiryTime.total_seconds()))
+        self.set_header('Expires', datetime.datetime.now() + self.settings["opendapPageExpiryTime"])
+        self.set_header('Cache-Control', 'max-age=%d'%int(self.settings["opendapPageExpiryTime"].total_seconds()))
         self.set_header('Vary', 'X-Auth-Roles')
     def _references(self,objectId):
         return '%s%s/info/%s.html'%(self.urlprefix, self.serverPrefix, objectId)
+    def locate(self, objectId):
+        return self.settings["data_locator"].locate(objectId)
 
 class DASHandler(OpenDAPHandler):
     def initialize(self, *args, **kwargs):
         super(DASHandler, self).initialize(*args, **kwargs)
         self.set_header('Content-Description', 'dods-das')
-        self.set_header('Content-Type', 'text/plain')
+        self.set_header('Content-Type', 'text/plain; charset=utf-8')
         
     def get(self,objectId):
         if self.chk_etag():
             return
-        product = self.application.productaccessor.get(objectId)
-        self.write(product2Dataset(product,references=self._references(objectId))._repr_das_())
+        data = self.locate(objectId)
+        self.write(u"".join(xr2das(data)).encode("utf-8"))
 
 class DDSHandler(OpenDAPHandler):
     def initialize(self, *args, **kwargs):
         super(DDSHandler, self).initialize(*args, **kwargs)
         self.set_header('Content-Description', 'dods-dds')
-        self.set_header('Content-Type', 'text/plain')
+        self.set_header('Content-Type', 'text/plain; charset=utf-8')
         
     def get(self,objectId):
         if self.chk_etag():
             return
-        product = self.application.productaccessor.get(objectId)
-        self.write(product2Dataset(product,references=self._references(objectId))._repr_dds_())
+        data = self.locate(objectId)
+        projItems = filter(lambda x: x is not None, map(Projection.parse, self.request.query.split(',')))
+        data = self.locate(objectId)
+        if len(projItems) > 0:
+            values = [(p.id, data[p.id][p.numpySlice]) for p in projItems]
+        else:
+            values = list(data.items())
+        self.write(u"".join(xr2dds(values)))
 
 class DataDDSHandler(OpenDAPHandler):
     def initialize(self, *args, **kwargs):
@@ -316,16 +223,20 @@ class DataDDSHandler(OpenDAPHandler):
         #self.set_header('Content-Type', 'text/plain')
 
     @gen.coroutine
-    def get(self,objectId):
+    def get(self, objectId):
         if self.chk_etag():
             return
         projItems = filter(lambda x: x is not None, map(Projection.parse, self.request.query.split(',')))
-        product = self.application.productaccessor.get(objectId)
-        dataset = product2Dataset(product, projItems,references=self._references(objectId))
-        self.write(dataset._repr_dds_())
+        data = self.locate(objectId)
+        print list(projItems)
+        if len(projItems) > 0:
+            values = [(p.id, data[p.id][p.numpySlice]) for p in projItems]
+        else:
+            values = list(data.items())
+        self.write(u"".join(xr2dds(values)))
         self.write("\nData:\n")
-        for d in dataset.generateData():
-            self.write(d)
-            yield self.flush()
+        for cname, component in values:
+            for part in xrda2xdr(component):
+                self.write(part)
+                yield self.flush()
         self.finish()
-

@@ -192,7 +192,10 @@ class DASHandler(OpenDAPHandler):
     def get(self,objectId):
         if self.chk_etag():
             return
-        data = self.locate(objectId)
+        try:
+            data = self.locate(objectId)
+        except:
+            return self.not_found()
         self.write(u"".join(xr2das(data)).encode("utf-8"))
 
 class DDSHandler(OpenDAPHandler):
@@ -205,7 +208,10 @@ class DDSHandler(OpenDAPHandler):
         if self.chk_etag():
             return
         name = objectId.split("/")[-1]
-        data = self.locate(objectId)
+        try:
+            data = self.locate(objectId)
+        except:
+            return self.not_found()
         projItems = filter(lambda x: x is not None, map(Projection.parse, self.request.query.split(',')))
         data = self.locate(objectId)
         if len(projItems) > 0:
@@ -227,8 +233,10 @@ class DataDDSHandler(OpenDAPHandler):
             return
         projItems = filter(lambda x: x is not None, map(Projection.parse, self.request.query.split(',')))
         name = objectId.split("/")[-1]
-        data = self.locate(objectId)
-        print list(projItems)
+        try:
+            data = self.locate(objectId)
+        except:
+            return self.not_found()
         if len(projItems) > 0:
             values = [(p.id, data[p.id][p.numpySlice]) for p in projItems]
         else:
@@ -250,6 +258,6 @@ class InfoHandler(OpenDAPHandler):
         name = objectId.split("/")[-1]
         try:
             data = self.locate(objectId)
-        except IOError:
+        except:
             return self.not_found()
         self.render("dapinfo.html", name=name, data=data)

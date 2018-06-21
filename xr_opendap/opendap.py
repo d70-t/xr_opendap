@@ -236,7 +236,8 @@ class DataDDSHandler(OpenDAPHandler):
         try:
             data = self.locate(objectId)
         except:
-            return self.not_found()
+            self.not_found()
+            return
         if len(projItems) > 0:
             values = [(p.id, data[p.id][p.numpySlice]) for p in projItems]
         else:
